@@ -6,7 +6,7 @@ Unser Ziel als Unternehmen ist es, anderen Unternehmen dabei zu helfen mithilfe 
 ## Updates für die Module
 Das Modul sollte ohne große Probleme auch in der Zukunft funktionieren. Nichtsdestotrotz können wir hierfür **keine** Garantie geben. Das Modul dient der Öffentlichkeit und jeder, der möchte, kann sich an diesem Projekt beteiligen und Updates per Pull Request einsenden.
 
-Wir werden die Module bei großen Changes innerhalb von WHMCS, sofern es die Zeit erlaubt, Updates einspielen und bereitstellen.
+Wir werden die Module bei großen Changes - innerhalb von WHMCS - , sofern es die Zeit erlaubt, mit Updates versorgen und bereitstellen.
 
 Solltet ihr dieses Modul nutzen und könnt programmieren, würden wir uns über eine PR von euch freuen.
 
@@ -21,6 +21,8 @@ Um eine gute Buchführung zu ermöglichen, empfehlen wir stets einen Steuerberat
 Zieht den Ordner in euren WHMCS-Root-Ordner. Aktiviert das Modul im Admin-Bereich und hinterlegt alle notwendigen Bedingungen.
 
 Um dieses Modul nutzen zu können, benötigt ihr einen Lexoffice Account mit entsprechenden API-Rechten.
+
+**Der Secret-Key wird benötigt, um auf die PDFInvoice.php zuzugreifen. Der Key sollte daher grundsätzlich sicher und eindeutig sein. Nutzt hierfür am besten eine uuid4.**
 
 ## Credits
 - PHP-Libaray für lexoffice: https://github.com/Baebeca-Solutions/lexoffice-php-api
