@@ -621,7 +621,7 @@ class CronHelper{
         $paidInvoices = InvoicesHelper::getPaidInvoices();
         # drop all paid invoices which are already integrated
         foreach ($paidInvoices as $invoice){
-            $invoiceModel = new LexofficeInvoice($invoice->date);
+            $invoiceModel = new LexofficeInvoice($invoice->id);
             if (!$invoiceModel->isIntegrated() && $invoiceModel->isPaid()){
                 try {
                     if (strtotime($invoice->date) > $checkDATE){
