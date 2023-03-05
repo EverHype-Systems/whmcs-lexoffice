@@ -1,3 +1,4 @@
+
 # EverHype Systems GmbH - lexoffice x WHMCS
 
 ## Der Grund, warum das Modul nun kostenfrei ist:
@@ -20,9 +21,14 @@ Um eine gute Buchführung zu ermöglichen, empfehlen wir stets einen Steuerberat
 ## Installation & Konfiguration
 Zieht den Ordner in euren WHMCS-Root-Ordner. Aktiviert das Modul im Admin-Bereich und hinterlegt alle notwendigen Bedingungen.
 
-Um dieses Modul nutzen zu können, benötigt ihr einen Lexoffice Account mit entsprechenden API-Rechten.
+Um dieses Modul nutzen zu können, benötigt ihr einen Sevdesk Account mit entsprechenden API-Rechten.
 
 **Der Secret-Key wird benötigt, um auf die PDFInvoice.php zuzugreifen. Der Key sollte daher grundsätzlich sicher und eindeutig sein. Nutzt hierfür am besten eine uuid4.**
+
+## Support & Hilfestellungen
+Falls Hilfe benötigt benötigt, könnt ihr euch gerne bei uns melden. Bitte beachtet, dass wir für ein kostenloses Modul keinen kostenlosen direkt Support anbieten können. Für kostenlosen Support öffnet bitte ein Github Issue, es kann hier aber passieren, dass es zu Wartezeiten kommen kann.
+
+https://everhype.de/open-source-support
 
 ## Credits
 - PHP-Libaray für lexoffice: https://github.com/Baebeca-Solutions/lexoffice-php-api
