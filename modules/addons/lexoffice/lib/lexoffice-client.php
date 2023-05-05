@@ -248,7 +248,7 @@ class lexoffice_client {
                 'taxtitle' => 'TVA',
                 'taxrates' => (object)[
                     'default' => 17,
-                    'reduced' => [3, 8],
+                    'reduced' => [3, 8, 14],
                     'nullrate' => false,
                 ],
                 'europe_member' => true,
@@ -371,7 +371,7 @@ class lexoffice_client {
                     'reduced' => [11.11, 12, 15],
                     'nullrate' => false,
                 ],
-                'europe_member' => true,
+                'europe_member' => false,
             ],
         ];
     }
@@ -558,15 +558,19 @@ class lexoffice_client {
     }
 
     public function create_contact(array $data) {
-        // todo some validation checks
+        $data = $this->validate_contact_data($data);
+
         // set version to 0 to create a new contact
         $data['version'] = 0;
         $new_contact = $this->api_call('POST', 'contacts', '', $data);
 
         // #73917
         // support a technical race condition in lexoffice database system
-        // we have to wait 500ms before we can do anything with the delivered contact id
-        usleep(500000); // 500 ms / 0.5 sec
+        // lexoffice statement: we have to wait 500ms before we can do anything with the delivered contact id because clustersync need synctime
+        // 202202 increased to 700ms because sometimes 500ms is not enough :/
+        // #88420 202206 increased to 1s because sometimes 700ms is not enough :/
+        // #90527 202208 increased to 2s because sometimes 1s is not enough :/
+        sleep(2);
 
         return $new_contact;
     }
@@ -575,8 +579,15 @@ class lexoffice_client {
         return $this->api_call('POST', 'quotations', '', $data, ($finalized ? '?finalize=true' : ''));
     }
 
-    public function create_creditnote($data, $finalized = false) {
-        return $this->api_call('POST', 'credit-notes', '', $data, ($finalized ? '?finalize=true' : ''));
+    public function create_creditnote($data, $finalized = false, $linked_invoice_id = '') {
+        $params_url = '';
+        $params = [];
+        if ($finalized) $params[] = 'finalize=true';
+        if (!empty($linked_invoice_id)) $params[] = 'precedingSalesVoucherId='.$linked_invoice_id;
+
+        if (!empty($params)) $params_url = '?'.implode('&', $params);
+
+        return $this->api_call('POST', 'credit-notes', '', $data, $params_url);
     }
 
     public function create_invoice($data, $finalized = false) {
@@ -591,6 +602,10 @@ class lexoffice_client {
 
     public function create_voucher($data) {
         return $this->api_call('POST', 'vouchers', '', $data);
+    }
+
+    public function create_delivery_note($data) {
+        return $this->api_call('POST', 'delivery-notes', '', $data);
     }
 
     public function get_event($uuid) {
@@ -680,6 +695,10 @@ class lexoffice_client {
 
     public function get_orderconfirmation($uuid) {
         return $this->api_call('GET', 'order-confirmations', $uuid);
+    }
+
+    public function get_deliverynote($uuid) {
+        return $this->api_call('GET', 'delivery-notes', $uuid);
     }
 
     /* legacy function - will be removed in futere releases */
@@ -999,19 +1018,21 @@ class lexoffice_client {
         if ($this->is_tax_free_company()) return '7a1efa0e-6283-4cbf-9583-8e88d3ba5960'; // §19 Kleinunternehmer
 
         // Deutschland
-        if (strtoupper($country_code) == 'DE') return '8f8664a1-fd86-11e1-a21f-0800200c9a66'; // Einnahmen
+        if (strtoupper($country_code) == 'DE' && $physical_good) return '8f8664a8-fd86-11e1-a21f-0800200c9a66'; // Einnahmen -> Warenlieferung
+        if (strtoupper($country_code) == 'DE') return '8f8664a0-fd86-11e1-a21f-0800200c9a66'; // Einnahmen
 
         // Europa
         if ($this->is_european_member($country_code, $date)) {
-            // B2B
-            // Ware/Dienstleistung
-            if ($taxrate == 0 && $euopean_vatid && $b2b_business) return '9075a4e3-66de-4795-a016-3889feca0d20'; // Innergemeinschaftliche Lieferung
+            // B2B - Warenlieferung
+            if ($taxrate == 0 && $euopean_vatid && $b2b_business && $physical_good) return '9075a4e3-66de-4795-a016-3889feca0d20'; // Innergemeinschaftliche Lieferung
+            // B2B - Dienstleistung
+            if ($taxrate == 0 && $euopean_vatid && $b2b_business && !$physical_good) return '380a20cb-d04c-426e-b49c-84c22adfa362'; // Fremdleistungen §13b
 
             // Check OSS Stuff
             $oss = $this->is_oss_needed($country_code, $date);
 
             // Europa B2C
-            // Ware/Dienstleistung ohne OSS
+            // Waren und Dienstleistungen ohne OSS
             if ($oss === false) return '8f8664a1-fd86-11e1-a21f-0800200c9a66'; // Einnahmen
 
             // oss "destination" configuration (we have to check with target country taxrates)
@@ -1028,6 +1049,7 @@ class lexoffice_client {
                 ]);
 
                 if (!$this->check_taxrate($taxrate, $country_code, $date)) throw new lexoffice_exception('lexoffice-php-api: invalid OSS taxrate for given country', [
+                    'type' => 'destination',
                     'taxrate' => $taxrate,
                     'country_code' => $country_code,
                     'date' => $date,
@@ -1037,7 +1059,7 @@ class lexoffice_client {
                     'oss_valid_taxrates' => $oss_taxrates,
                 ]);
 
-                return $this->get_oss_voucher_category($country_code, $date, ($physical_good ? 1 : 2));
+                return $this->get_oss_voucher_category($country_code, $date, ($physical_good ? 1 : 2), $taxrate);
             }
 
             // oss "origin" configuration (we have to check with DE taxrates)
@@ -1053,6 +1075,7 @@ class lexoffice_client {
                 ]);
 
                 if (!$this->check_taxrate($taxrate, 'DE', $date)) throw new lexoffice_exception('lexoffice-php-api: invalid OSS taxrate for given country', [
+                    'type' => 'origin',
                     'taxrate' => $taxrate,
                     'country_code' => 'DE',
                     'date' => $date,
@@ -1062,7 +1085,7 @@ class lexoffice_client {
                     'oss_valid_taxrates' => $oss_taxrates,
                 ]);
 
-                return $this->get_oss_voucher_category($country_code, $date, ($physical_good ? 1 : 2));
+                return $this->get_oss_voucher_category($country_code, $date, ($physical_good ? 1 : 2), $taxrate);
             }
 
             throw new lexoffice_exception('lexoffice-php-api: unknown OSS configuration', [
@@ -1070,25 +1093,40 @@ class lexoffice_client {
             ]);
         }
 
-        // Welt (inkl. Schweiz)
-        // Warenlieferung
+        // Welt (inkl. Schweiz) - Warenlieferung
         if ($physical_good) {
-            // Welt (inkl. Schweiz)
             // B2B
             if ($taxrate == 0 && $b2b_business) return '93d24c20-ea84-424e-a731-5e1b78d1e6a9'; // Ausfuhrlieferungen an Drittländer
-
-            // Welt (inkl. Schweiz)
             // B2C
             if ($taxrate == 0 && !$b2b_business) return '8f8664a1-fd86-11e1-a21f-0800200c9a66'; // Einnahmen
-            // Dienstleistung
-        } else {
-            // Welt (inkl. Schweiz)
+
+            throw new lexoffice_exception('lexoffice-php-api: unknown booking scenario, world shipping with taxes. cannot decide correct booking category', [
+                'taxrate' => $taxrate,
+                'country_code' => $country_code,
+                'date' => $date,
+                'european_vatid' => $euopean_vatid,
+                'b2b_business' => $b2b_business,
+                'physical_good' => $physical_good,
+            ]);
+        }
+        // Welt (inkl. Schweiz) - Dienstleistung
+        else {
             // B2B
             if ($taxrate == 0 && $b2b_business) return 'ef5b1a6e-f690-4004-9a19-91276348894f'; // Dienstleistung an Drittländer
-
-            // Welt (inkl. Schweiz)
             // B2C
-            if ($taxrate > 0 && !$b2b_business) return '8f8664a1-fd86-11e1-a21f-0800200c9a66'; // Einnahmen
+            if ($taxrate == 0 && !$b2b_business) return '8f8664a1-fd86-11e1-a21f-0800200c9a66'; // Einnahmen | #87248 - API - individual_person_not_applicable_service_third_party (lexoffice does not support the correct booking type)
+
+            // Welt (inkl. Schweiz) - B2C
+            #if ($taxrate > 0) return '8f8664a1-fd86-11e1-a21f-0800200c9a66'; // Einnahmen
+
+            throw new lexoffice_exception('lexoffice-php-api: unknown booking scenario, world service with taxes. cannot decide correct booking category', [
+                'taxrate' => $taxrate,
+                'country_code' => $country_code,
+                'date' => $date,
+                'european_vatid' => $euopean_vatid,
+                'b2b_business' => $b2b_business,
+                'physical_good' => $physical_good,
+            ]);
         }
 
         throw new lexoffice_exception('lexoffice-php-api: unknown booking scenario, cannot decide correct booking category', [
@@ -1105,34 +1143,46 @@ class lexoffice_client {
      * Returns an array with the possible taxrates for the given country
      * @param string $country_code  2-letter country code
      * @param int    $date          booking date timestamp
-     * @return array
+     * @return array if $return_unsorted = false
      *  [
-     *      'default' => 19
-     *      'reduced' => [7, 5]
+     *      'default' => 19,
+     *      'reduced' => [7, 5],
+     *      'nullrate' => false
      *  ]
+     * array if $return_unsorted = true
+     *  [ 19, 7, 5 ]
      */
-    public function get_taxrates(string $country_code, int $date): array {
+    public function get_taxrates(string $country_code, int $date, $return_unsorted = false): array {
         // load country definition, needed in extending classes with own constructor
         if (is_null($this->countries)) $this->load_country_definition();
 
         // unknown country
-        if (empty($this->countries->{strtoupper($country_code)})) return [
-            'default' => null,
-            'reduced' => [0]
-        ];
-
-        // add zero taxrate to array
-        $this->countries->{strtoupper($country_code)}->taxrates->reduced[] = 0;
-
-        // adjust german taxrate (corona tax change) (01.07.2020 - 31.12.2020)
-        if ($date >= 1593554400 && $date <= 1609455599) {
-            return $this->check_adjusted_taxrate($country_code, (array) $this->countries->{strtoupper($country_code)}->taxrates, $date);
+        if (empty($this->countries->{strtoupper($country_code)})) {
+            if (!$return_unsorted) return [
+                'default' => null,
+                'reduced' => [0]
+            ];
+            return [0];
         }
 
-        // overwrite until 01.07.2021, no OSS needed
-        if ($date <= 1625090400 && strtoupper($country_code) != 'DE') return $this->get_taxrates('DE', $date);
+        $taxrates = $this->countries->{strtoupper($country_code)}->taxrates;
 
-        return $this->check_adjusted_taxrate($country_code, (array) $this->countries->{strtoupper($country_code)}->taxrates, $date);
+        // add zero taxrate to array
+        if (!in_array(0, $taxrates->reduced)) $taxrates->reduced[] = 0;
+
+        // overwrite taxrates if needed
+        $taxrates = $this->check_adjusted_taxrate($country_code, (array) $this->countries->{strtoupper($country_code)}->taxrates, $date);
+        if (!$return_unsorted) return $taxrates;
+
+        // unsorted return
+        $return = [];
+        if (isset($taxrates['default'])) $return[] = $taxrates['default'];
+        if (isset($taxrates['reduced']) && count($taxrates['reduced'])) {
+            foreach ($taxrates['reduced'] as $reduced) {
+                $return[] = $reduced;
+            }
+        }
+        return $return;
     }
 
     /**
@@ -1145,9 +1195,23 @@ class lexoffice_client {
     private function check_adjusted_taxrate(string $country_code, array $taxrates, int $date): array {
 
         // german temporary corona tax change (01.07.2020 - 31.12.2020)
-        if ($date >= 1593554400 && $date <= 1609455599) {
+        if (strtoupper($country_code) === 'DE' && $date >= 1593554400 && $date <= 1609455599) {
             $taxrates['default'] = 16;
             $taxrates['reduced'] = [5, 0];
+        }
+
+        // overwrite until 01.07.2021, no OSS needed so german taxes should give back
+        if ($date <= 1625090400 && strtoupper($country_code) != 'DE') return $this->get_taxrates('DE', $date);
+
+        // luxemburg temporary inflation tax change (01.01.2021 - 31.12.2022)
+        if (strtoupper($country_code) === 'LU' && $date >= 1672531200 && $date <= 1703977199) {
+            $taxrates['default'] = 16;
+            $taxrates['reduced'] = [0, 3, 7, 13];
+        }
+
+        // spanien temporary inflation tax change (01.01.2021 - 31.12.2022)
+        if (strtoupper($country_code) === 'ES' && $date >= 1672531200 && $date <= 1703977199) {
+            $taxrates['reduced'][] = 5;
         }
 
         return $taxrates;
@@ -1166,7 +1230,7 @@ class lexoffice_client {
         // iterate because in_array() not like floats for equal check :/
         if (empty($taxrates['reduced'])) return false;
         foreach ($taxrates['reduced'] as $taxrate_reduced) {
-            if ($taxrate_reduced === 0) return true;
+            if ($taxrate === $taxrate_reduced) return true;
             if (abs(floatval($taxrate_reduced)-$taxrate) < 0.00001) return true;
         }
         return false;
@@ -1188,6 +1252,7 @@ class lexoffice_client {
 
         $profile = $this->get_profile();
         if ($profile->smallBusiness) return false; // not used for taxless businesses
+        if ($profile->taxType === 'vatfree') return false; // no taxes in this account
         if ($country_code === strtoupper('DE')) return false; // not for own country
         if (!$this->is_european_member($country_code, $date)) return false; // not for outside EU
         if (empty($profile->distanceSalesPrinciple)) throw new lexoffice_exception('lexoffice-php-api: missing OSS configuration in lexoffice account'); // not configured in lexoffice
@@ -1201,26 +1266,119 @@ class lexoffice_client {
      * @param int $booking_category
      *  1 => Fernverkauf
      *  2 => Elektronische Dienstleistung
+     * @param float|int $taxrate
      * @return string lexoffice voucher booking category id
      * @throws \lexoffice_exception
      */
-    public function get_oss_voucher_category(string $country_code, int $date, int $booking_category = 1): string {
+    public function get_oss_voucher_category(string $country_code, int $date, int $booking_category = 1, $taxrate = 0): string {
         $oss_type = $this->is_oss_needed($country_code, $date);
         // german taxrates
         if ($oss_type === 'origin') {
-            if ($booking_category === 1) return '7c112b66-0565-479c-bc18-5845e080880a';
-            if ($booking_category === 2) return 'd73b880f-c24a-41ea-a862-18d90e1c3d82';
+            if ($booking_category === 1) return '7c112b66-0565-479c-bc18-5845e080880a'; // Fernverkauf
+            if ($booking_category === 2) return 'd73b880f-c24a-41ea-a862-18d90e1c3d82'; // Elektronische Dienstleistungen
             throw new lexoffice_exception('lexoffice-php-api: invalid given booking_category', ['booking_category' => $booking_category]);
         }
         // target country taxrates
         elseif ($oss_type === 'destination') {
-            if ($booking_category === 1) return '4ebd965a-7126-416c-9d8c-a5c9366ee473';
-            if ($booking_category === 2) return 'efa82f40-fd85-11e1-a21f-0800200c9a66';
+            if ($booking_category === 1) return '4ebd965a-7126-416c-9d8c-a5c9366ee473'; // Fernverkauf in EU-Land steuerpflichtig
+            if ($booking_category === 2) return '7ecea006-844c-4c98-a02d-aa3142640dd5'; // Elektronische Dienstleistung in EU-Land steuerpflichtig
             throw new lexoffice_exception('lexoffice-php-api: invalid given booking_category', ['booking_category' => $booking_category]);
         }
         else {
             throw new lexoffice_exception('lexoffice-php-api: no possible OSS voucher category id');
         }
+    }
+
+    private function validate_contact_data(array $data): array {
+        if (isset($data['company']['name']) && empty($data['company']['name'])) $data['company']['name'] = '-- ohne Firmenname --';
+        if (isset($data['person']['firstName']) && empty($data['person']['firstName'])) $data['person']['firstName'] = '-- ohne Vorname --';
+        if (isset($data['person']['lastName']) && empty($data['person']['lastName'])) $data['person']['lastName'] = '-- ohne Nachname --';
+
+        // separate multiple phonenumbers in one field
+        $phone_numbers_types = ['business', 'office', 'mobile', 'private', 'fax', 'other'];
+        $delimiters = ['oder', ','];
+        foreach ($phone_numbers_types as $type) {
+            if (empty($data['phoneNumbers'][$type])) continue;
+            foreach ($data['phoneNumbers'][$type] as $key => $number) {
+                $changed = false;
+                foreach ($delimiters as $delimiter) {
+                    if (stripos($number, $delimiter) === false) continue;
+                    $number = strtolower($number);
+                    $tmp = explode($delimiter, $number);
+                    foreach ($tmp as $tmp_item) {
+                        $data['phoneNumbers'][$type][] = trim($tmp_item);
+                    }
+                    $changed = true;
+                }
+
+                // cleanup
+                if ($changed) unset($data['phoneNumbers'][$type][$key]);
+                $data['phoneNumbers'][$type] = array_unique($data['phoneNumbers'][$type]);
+                $data['phoneNumbers'][$type] = array_values($data['phoneNumbers'][$type]);
+            }
+        }
+
+        // remove chars from numbers
+        foreach ($phone_numbers_types as $type) {
+            if (empty($data['phoneNumbers'][$type])) continue;
+            foreach ($data['phoneNumbers'][$type] as $key => $number) {
+                $data['phoneNumbers'][$type][$key] = trim(preg_replace('/[A-Za-z]/', '', $data['phoneNumbers'][$type][$key]));
+            }
+        }
+
+        // eliminate to long numbers
+        foreach ($phone_numbers_types as $type) {
+            if (empty($data['phoneNumbers'][$type])) continue;
+            foreach ($data['phoneNumbers'][$type] as $key => $number) {
+                if (strlen($data['phoneNumbers'][$type][$key] > 30)) unset($data['phoneNumbers'][$type][$key]);
+            }
+            $data['phoneNumbers'][$type] = array_values($data['phoneNumbers'][$type]);
+        }
+
+
+        // respect lexoffice issue
+        // it's only possible to create and change contacts with a
+        // maximum of one entry in each lists
+        foreach ($phone_numbers_types as $type) {
+            if (empty($data['phoneNumbers'][$type]) || count($data['phoneNumbers'][$type]) === 1) continue;
+            // only use the first item
+            $tmp = $data['phoneNumbers'][$type][0];
+            $data['phoneNumbers'][$type] = [];
+            $data['phoneNumbers'][$type][] = trim($tmp);
+        }
+
+
+        $email_types = ['business', 'office', 'private', 'other'];
+        // remove empty values from nested emailAddresses array
+        foreach ($email_types as $type) {
+            if (!isset($data['emailAddresses'][$type])) continue;
+
+            foreach ($data['emailAddresses'][$type] as $key => $email) {
+                if (empty($email)) unset($data['emailAddresses'][$type][$key]);
+            }
+            if (count($data['emailAddresses'][$type]) === 0) {
+                unset($data['emailAddresses'][$type]);
+            }
+            else {
+                $data['emailAddresses'][$type] = array_values($data['emailAddresses'][$type]);
+            }
+        }
+
+        // remove empty emailAddresses array
+        if (empty($data['emailAddresses'])) unset($data['emailAddresses']);
+
+        // respect lexoffice issue
+        // it's only possible to create and change contacts with a
+        // maximum of one entry in each lists
+        foreach ($email_types as $type) {
+            if (empty($data['emailAddresses'][$type]) || count($data['emailAddresses'][$type]) === 1) continue;
+            // only use the first item
+            $tmp = $data['emailAddresses'][$type][0];
+            $data['emailAddresses'][$type] = [];
+            $data['emailAddresses'][$type][] = trim($tmp);
+        }
+
+        return $data;
     }
 
     /* legacy wrapper */
