@@ -18,7 +18,7 @@ class InvoicesHelper
             ->lexoffice_id;
     }
 
-    public static function getDirName($date): string
+    public function getDirName($date): string
     {
         $dt = strtotime($date);
         return __DIR__ . '/invoices/' . date('Y', $dt) . '/' . date('m');

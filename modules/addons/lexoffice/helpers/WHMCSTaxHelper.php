@@ -3,9 +3,12 @@
 namespace helpers;
 
 require_once __DIR__ . '/../../../init.php';
+
 use Exception;
 use Illuminate\Database\Capsule\Manager as Capsule;
-class WHMCSTaxHelper {
+
+class WHMCSTaxHelper
+{
 
 
     public function __construct(\lexoffice_client $lexofficeClient)
@@ -17,9 +20,6 @@ class WHMCSTaxHelper {
         $this->taxType = $this->getTaxType();
     }
 
-    public function getCategoryId(float $taxrate, string $country_code, int $date, bool $euopean_vatid, bool $b2b_business, bool $physical_good = false) {
-        return $this->lexofficeClient->get_needed_voucher_booking_id($taxrate, $country_code, $date, $euopean_vatid, $b2b_business, $physical_good);
-    }
     public function getTaxType(): string
     {
         if ($this->smallBusiness) {
@@ -32,5 +32,20 @@ class WHMCSTaxHelper {
     public function isTaxIncluded(): bool
     {
         return 'Inclusive' == Capsule::table('tblconfiguration')->where('setting', 'TaxType')->first()->value;
+    }
+
+    /**
+     * @param float $taxrate
+     * @param string $country_code
+     * @param int $date
+     * @param bool $euopean_vatid
+     * @param bool $b2b_business
+     * @param bool $physical_good
+     * @return string
+     * @throws \lexoffice_exception
+     */
+    public function getCategoryId(float $taxrate, string $country_code, int $date, bool $euopean_vatid, bool $b2b_business, bool $physical_good = false)
+    {
+        return $this->lexofficeClient->get_needed_voucher_booking_id($taxrate, $country_code, $date, $euopean_vatid, $b2b_business, $physical_good);
     }
 }

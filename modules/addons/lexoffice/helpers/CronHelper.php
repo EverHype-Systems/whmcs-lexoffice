@@ -33,7 +33,8 @@ class CronHelper
                 $invoice->id,
                 $invoiceHelper,
                 $lexofficeModuleHelper->getLexofficeClient(),
-                $whmcsTaxHelper, $userLexofficeClient
+                $whmcsTaxHelper, $userLexofficeClient,
+                $lexofficeModuleHelper
             );
 
             try {
