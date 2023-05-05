@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/helpers/autoload.php';
+
 use helpers\CronHelper;
 use helpers\LexofficeClient;
 use helpers\LexofficeModuleHelper;
