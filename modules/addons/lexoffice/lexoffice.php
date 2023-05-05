@@ -1,10 +1,11 @@
 <?php
 
 if (!defined("WHMCS")) die("This file cannot be accessed directly");
+
 use Illuminate\Database\Capsule\Manager as Capsule;
 
-
-function lexoffice_config() {
+function lexoffice_config(): array
+{
     return [
         "name" => "lexoffice Export",
         "description" => "Dieses Modul exportiert alle bezahlten Rechnungen in Lexoffice. Bitte beachten Sie, dass die Zuordnungen der Zahlungen manuell in Lexoffice vorgenommen werden muss (GoBD).",
@@ -33,11 +34,12 @@ function lexoffice_config() {
                 "Description" => "<br>Bitte beachten Sie, dass die Eingabe dieser Datums bedeutet, dass <i>nur</i> Rechnungen, die ein größeres Datum haben exportiert werden.<br>Alle Rechnungen, die drunter liegen, werden ignoriert.",
                 "Default" => "01.01.2019",
             ],
-        ]
+        ],
     ];
 }
 
-function lexoffice_activate (){
+function lexoffice_activate(): array
+{
     try {
         if (!Capsule::schema()->hasTable('everhype_lexoffice_invoices')) {
             Capsule::schema()->create('everhype_lexoffice_invoices', function ($table) {
@@ -59,7 +61,7 @@ function lexoffice_activate (){
             'status' => "success",
             'description' => 'lexoffice Export erfolgreich initalisiert.',
         ];
-    } catch (Exception $e){
+    } catch (Exception $e) {
         return [
             'status' => "error",
             'description' => 'Unable to create lexoffice databases: ' . $e->getMessage(),
