@@ -1,7 +1,7 @@
 <?php
 
 namespace helpers;
-require_once __DIR__ . '/../../../init.php';
+require_once __DIR__ . '/../../../../init.php';
 
 use Exception;
 use Illuminate\Database\Capsule\Manager as Capsule;
