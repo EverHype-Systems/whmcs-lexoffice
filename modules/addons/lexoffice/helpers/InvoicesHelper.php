@@ -49,7 +49,8 @@ class InvoicesHelper
             throw new Exception('Invalid status');
         }
 
-        return Capsule::table('tblinvoices')->where('status', $status)->get();
+        // added toArray() to ensure, we get an array, as it is declared as the return type
+        return Capsule::table('tblinvoices')->where('status', $status)->get()->toArray(); 
     }
 
     public function isInvoiceIntegrated($invoiceid): bool
